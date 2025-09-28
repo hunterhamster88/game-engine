@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MoleScript Live Interpreter</title>
+  <style>
+    body { font-family: sans-serif; display: flex; gap: 20px; padding: 20px; flex-wrap: wrap; }
+    textarea { width: 300px; height: 400px; font-family: monospace; }
+    #canvas { width: 400px; height: 400px; background: #eee; position: relative; }
+    .object { position: absolute; width: 40px; height: 40px; text-align: center; line-height: 40px; color: white; font-weight: bold; }
+    #console { width: 300px; height: 400px; overflow-y: auto; background: #111; color: #0f0; padding: 10px; font-family: monospace; }
+    button { padding: 10px 20px; font-size: 16px; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+
+  <div>
+    <button id="startBtn">Start</button><br>
+    <textarea id="editor">// MoleScript
+input as username
+say player "Hello, {username}!"
+on key "right" then move player right by 1
+on key "space" then say player "Jump!"
+spawn "fire" as player</textarea>
+  </div>
+
+  <div id="canvas"></div>
+  <div id="console"></div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const consoleDiv = document.getElementById('console');
+    const editor = document.getElementById('editor');
+    const startBtn = document.getElementById('startBtn');
+
+    const objects = {};
+    const variables = {};
+    const keyBindings = {};
+
+    const keyMap = {
+      right: "ArrowRight",
+      left: "ArrowLeft",
+      up: "ArrowUp",
+      down: "ArrowDown",
+      space: " ",
+      enter: "Enter"
+    };
+
+    function log(msg) {
+      consoleDiv.innerHTML += msg + '<br>';
+      consoleDiv.scrollTop = consoleDiv.scrollHeight;
+    }
+
+    function render() {
+      canvas.innerHTML = '';
+      for (const name in objects) {
+        const obj = objects[name];
+        const el = document.createElement('div');
+        el.className = 'object';
+        el.style.left = obj.x * 40 + 'px';
+        el.style.top = obj.y * 40 + 'px';
+        el.style.background = obj.color;
+        el.textContent = name;
+        canvas.appendChild(el);
+      }
+    }
+
+    function substituteVars(text) {
+      return text.replace(/\{(\w+)\}/g, (_, key) => variables[key] || '');
+    }
+
+    function execute(line) {
+      line = line.trim();
+      if (line.startsWith('spawn')) {
+        const match = line.match(/spawn\s+"(.+)"\s+as\s+(\w+)/);
+        if (match) {
+          const [_, type, name] = match;
+          if (!objects[name]) {
+            objects[name] = { type, x: 0, y: 0, color: type === 'fire' ? 'red' : 'blue' };
+            log(`Spawned ${type} as ${name}`);
+          }
+        }
+      } else if (line.startsWith('move')) {
+        const match = line.match(/move\s+(\w+)\s+(up|down|left|right)\s+by\s+(\d+)/);
+        if (match) {
+          const [_, name, dir, amount] = match;
+          const obj = objects[name];
+          if (obj) {
+            const amt = parseInt(amount);
+            if (dir === 'up') obj.y -= amt;
+            if (dir === 'down') obj.y += amt;
+            if (dir === 'left') obj.x -= amt;
+            if (dir === 'right') obj.x += amt;
+            log(`Moved ${name} ${dir} by ${amt}`);
+          }
+        }
+      } else if (line.startsWith('set')) {
+        const match = line.match(/set\s+(\w+)\s+color\s+to\s+"(.+)"/);
+        if (match) {
+          const [_, name, color] = match;
+          const obj = objects[name];
+          if (obj) {
+            obj.color = color;
+            log(`Set ${name}'s color to ${color}`);
+          }
+        }
+      } else if (line.startsWith('say')) {
+        const match = line.match(/say\s+(\w+)\s+"(.+)"/);
+        if (match) {
+          const [_, name, message] = match;
+          if (objects[name]) {
+            log(`${name} says: "${substituteVars(message)}"`);
+          }
+        }
+      } else if (line.startsWith('input')) {
+        const match = line.match(/input\s+as\s+(\w+)/);
+        if (match) {
+          const varname = match[1];
+          const value = prompt(`Enter value for ${varname}:`);
+          variables[varname] = value;
+          log(`Input received: ${varname} = "${value}"`);
+        }
+      } else if (line.startsWith('on key')) {
+        const match = line.match(/on key\s+"(.+)"\s+then\s+(.+)/);
+        if (match) {
+          const [_, keyName, command] = match;
+          const actualKey = keyMap[keyName] || keyName;
+          keyBindings[actualKey] = command;
+          log(`Bound key "${keyName}" to command: ${command}`);
+        }
+      }
+    }
+
+    function parse(script) {
+      consoleDiv.innerHTML = '';
+      const lines = script.split('\n');
+      for (let line of lines) {
+        execute(line);
+      }
+      render();
+    }
+
+    startBtn.addEventListener('click', () => {
+      parse(editor.value);
+    });
+
+    document.addEventListener('keydown', (e) => {
+      const command = keyBindings[e.key];
+      if (command) {
+        execute(command);
+        render();
+      }
+    });
+  </script>
+
+</body>
+</html>
