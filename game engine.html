@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>MoleScript Interpreter</title>
+  <title>MoleScript v1.0.3</title>
   <style>
     body { font-family: sans-serif; display: flex; flex-wrap: wrap; gap: 20px; padding: 20px; }
     textarea { width: 300px; height: 400px; font-family: monospace; }
@@ -33,8 +33,9 @@
 <body>
 
   <div>
-    <button id="startBtn">Start</button><br>
-    <textarea id="editor">// MoleScript
+    <button id="startBtn">Start</button>
+    <button onclick="openGuide()">Guide</button><br>
+    <textarea id="editor">// MoleScript v1.0.3
 spawn "fire" as player
 set player health to 100
 spawn "hazard" as spike
@@ -52,258 +53,60 @@ if player.pos = spike.pos:
   <div id="console"></div>
 
   <script>
-    const canvas = document.getElementById('canvas');
-    const consoleDiv = document.getElementById('console');
-    const editor = document.getElementById('editor');
-    const startBtn = document.getElementById('startBtn');
-    const autocompleteBox = document.getElementById('autocomplete');
+    function openGuide() {
+      const guideWindow = window.open("", "MoleScriptGuide", "width=800,height=600");
+      guideWindow.document.write(`
+        <html><head><title>MoleScript v1.0.3 Guide</title>
+        <style>
+          body { font-family: sans-serif; max-width: 700px; margin: auto; padding: 20px; line-height: 1.6; }
+          h1, h2, h3 { color: #c33; }
+          code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
+          pre { background: #f4f4f4; padding: 10px; border-radius: 6px; overflow-x: auto; }
+        </style></head><body>
+        <h1>🧭 MoleScript v1.0.3 Guide</h1>
+        <h2>🚀 Overview</h2>
+        <ul>
+          <li>✅ Health system (<code>set</code>, <code>damage</code>, <code>heal</code>)</li>
+          <li>✅ Position logic (<code>pos</code>, <code>posx</code>, <code>posy</code>)</li>
+          <li>✅ Conditional checks (<code>if player.health <= 0</code>)</li>
+          <li>✅ Method-style calls (<code>player.animate "death"</code>)</li>
+          <li>✅ Autocomplete support</li>
+        </ul>
+        <h2>🧱 Core Syntax</h2>
+        <pre><code>spawn "fire" as player
+set player health to 100
+move player right by 3
+say player "Hello, {player.health}"</code></pre>
+        <h2>🧠 Reactive Logic</h2>
+        <pre><code>if player.pos = spike.pos:
+  player.damage 50
+  if player.health <= 0:
+    player.animate "death"</code></pre>
+        <h2>🩹 Effects</h2>
+        <pre><code>player.damage 25
+player.heal 10
+player.animate "spin"</code></pre>
+        <h2>🔁 Control Flow</h2>
+        <pre><code>loop 3 times:
+  move player down by 1
+  wait 0.5s</code></pre>
+        <h2>🎮 Input</h2>
+        <pre><code>input as username
+on key "right" then move player right by 1</code></pre>
+        <h2>🧪 Sample Script</h2>
+        <pre><code>spawn "fire" as player
+set player health to 100
+spawn "hazard" as spike
+move player right by 3
+move spike right by 3
 
-    const objects = {};
-    const variables = {};
-    const keyBindings = {};
-    let lines = [];
-
-    const keyMap = {
-      right: "ArrowRight", left: "ArrowLeft", up: "ArrowUp", down: "ArrowDown",
-      space: " ", enter: "Enter"
-    };
-
-    const moleCommands = [
-      'spawn "fire" as player',
-      'spawn "hazard" as spike',
-      'move player right by 1',
-      'set player color to "orange"',
-      'set player health to 100',
-      'player.damage 25',
-      'player.heal 10',
-      'say player "Hello!"',
-      'input as username',
-      'on key "right" then move player right by 1',
-      'loop 3 times:',
-      'wait 1s',
-      'if player.pos = spike.pos:',
-      'if player.health <= 0:',
-      'player.animate "death"'
-    ];
-
-    function log(msg) {
-      consoleDiv.innerHTML += msg + '<br>';
-      consoleDiv.scrollTop = consoleDiv.scrollHeight;
+if player.pos = spike.pos:
+  player.damage 50
+  if player.health <= 0:
+    player.animate "death"</code></pre>
+        </body></html>
+      `);
     }
-
-    function render() {
-      canvas.innerHTML = '';
-      for (const name in objects) {
-        const obj = objects[name];
-        const el = document.createElement('div');
-        el.className = 'object';
-        el.style.left = obj.x * 40 + 'px';
-        el.style.top = obj.y * 40 + 'px';
-        el.style.background = obj.color;
-        el.textContent = name;
-        canvas.appendChild(el);
-      }
-    }
-
-    function substituteVars(text) {
-      return text.replace(/\{(\w+)\}/g, (_, key) => variables[key] || '');
-    }
-
-    function getValue(expr) {
-      const parts = expr.split('.');
-      if (parts.length === 2 && objects[parts[0]]) {
-        const obj = objects[parts[0]];
-        if (parts[1] === 'posx') return obj.x;
-        if (parts[1] === 'posy') return obj.y;
-        if (parts[1] === 'health') return obj.health || 0;
-        if (parts[1] === 'pos') return `${obj.x},${obj.y}`;
-      }
-      return parseFloat(expr) || 0;
-    }
-
-    function execute(line) {
-      line = line.trim();
-      if (line.startsWith('spawn')) {
-        const match = line.match(/spawn\s+"(.+)"\s+as\s+(\w+)/);
-        if (match) {
-          const [_, type, name] = match;
-          if (!objects[name]) {
-            objects[name] = { type, x: 0, y: 0, color: type === 'fire' ? 'red' : 'blue', health: 100 };
-            log(`Spawned ${type} as ${name}`);
-          }
-        }
-      } else if (line.startsWith('move')) {
-        const match = line.match(/move\s+(\w+)\s+(up|down|left|right)\s+by\s+(\d+)/);
-        if (match) {
-          const [_, name, dir, amount] = match;
-          const obj = objects[name];
-          if (obj) {
-            const amt = parseInt(amount);
-            if (dir === 'up') obj.y -= amt;
-            if (dir === 'down') obj.y += amt;
-            if (dir === 'left') obj.x -= amt;
-            if (dir === 'right') obj.x += amt;
-            log(`Moved ${name} ${dir} by ${amt}`);
-          }
-        }
-      } else if (line.startsWith('set')) {
-        const match = line.match(/set\s+(\w+)\s+(color|health)\s+to\s+"?(.+?)"?$/);
-        if (match) {
-          const [_, name, prop, value] = match;
-          const obj = objects[name];
-          if (obj) {
-            obj[prop] = prop === 'health' ? parseInt(value) : value;
-            log(`Set ${name}'s ${prop} to ${value}`);
-          }
-        }
-      } else if (line.startsWith('say')) {
-        const match = line.match(/say\s+(\w+)\s+"(.+)"/);
-        if (match) {
-          const [_, name, message] = match;
-          if (objects[name]) {
-            log(`${name} says: "${substituteVars(message)}"`);
-          }
-        }
-      } else if (line.startsWith('input')) {
-        const match = line.match(/input\s+as\s+(\w+)/);
-        if (match) {
-          const varname = match[1];
-          const value = prompt(`Enter value for ${varname}:`);
-          variables[varname] = value;
-          log(`Input received: ${varname} = "${value}"`);
-        }
-      } else if (line.startsWith('on key')) {
-        const match = line.match(/on key\s+"(.+)"\s+then\s+(.+)/);
-        if (match) {
-          const [_, keyName, command] = match;
-          const actualKey = keyMap[keyName] || keyName;
-          keyBindings[actualKey] = command;
-          log(`Bound key "${keyName}" to command: ${command}`);
-        }
-      } else if (line.startsWith('loop')) {
-        const match = line.match(/loop\s+(\d+)\s+times:/);
-        if (match) {
-          const count = parseInt(match[1]);
-          const block = [];
-          let i = lines.indexOf(line) + 1;
-          while (i < lines.length && lines[i].startsWith('  ')) {
-            block.push(lines[i].trim());
-            i++;
-          }
-          for (let j = 0; j < count; j++) {
-            block.forEach((cmd, k) => {
-              setTimeout(() => {
-                execute(cmd);
-                render();
-              }, (j * block.length + k) * 500);
-            });
-          }
-        }
-      } else if (line.startsWith('wait')) {
-        const match = line.match(/wait\s+([\d.]+)s/);
-        if (match) {
-          const delay = parseFloat(match[1]) * 1000;
-          log(`Waiting ${delay}ms...`);
-        }
-      } else if (line.startsWith('if')) {
-        const match = line.match(/if\s+(.+?)\s*(=|!=|<=|>=|<|>)\s*(.+?):/);
-        if (match) {
-          const [_, left, op, right] = match;
-          const a = getValue(left);
-                    const b = getValue(right);
-          let condition = false;
-          if (op === '=') condition = a === b;
-          if (op === '!=') condition = a !== b;
-          if (op === '<') condition = a < b;
-          if (op === '>') condition = a > b;
-          if (op === '<=') condition = a <= b;
-          if (op === '>=') condition = a >= b;
-          if (condition) {
-            let i = lines.indexOf(line) + 1;
-            while (i < lines.length && lines[i].startsWith('  ')) {
-              execute(lines[i].trim());
-              i++;
-            }
-          }
-        }
-      } else if (line.includes('.damage')) {
-        const match = line.match(/(\w+)\.damage\s+(\d+)/);
-        if (match) {
-          const [_, name, amount] = match;
-          const obj = objects[name];
-          if (obj) {
-            obj.health = Math.max(0, (obj.health || 100) - parseInt(amount));
-            log(`${name} takes ${amount} damage (health: ${obj.health})`);
-          }
-        }
-      } else if (line.includes('.heal')) {
-        const match = line.match(/(\w+)\.heal\s+(\d+)/);
-        if (match) {
-          const [_, name, amount] = match;
-          const obj = objects[name];
-          if (obj) {
-            obj.health = (obj.health || 100) + parseInt(amount);
-            log(`${name} heals ${amount} (health: ${obj.health})`);
-          }
-        }
-      } else if (line.includes('.animate')) {
-        const match = line.match(/(\w+)\.animate\s+"(.+)"/);
-        if (match) {
-          const [_, name, effect] = match;
-          log(`${name} performs animation: ${effect}`);
-        }
-      }
-    }
-
-    function parse(script) {
-      consoleDiv.innerHTML = '';
-      lines = script.split('\n');
-      for (let line of lines) {
-        if (!line.startsWith('  ')) {
-          execute(line);
-        }
-      }
-      render();
-    }
-
-    startBtn.addEventListener('click', () => {
-      parse(editor.value);
-    });
-
-    document.addEventListener('keydown', (e) => {
-      const command = keyBindings[e.key];
-      if (command) {
-        execute(command);
-        render();
-      }
-    });
-
-    editor.addEventListener('keyup', (e) => {
-      const cursorPos = editor.selectionStart;
-      const text = editor.value.slice(0, cursorPos);
-      const lastLine = text.split('\n').pop();
-      const match = moleCommands.filter(cmd => cmd.startsWith(lastLine.trim()));
-
-      if (match.length > 0 && lastLine.trim().length > 0) {
-        const rect = editor.getBoundingClientRect();
-        autocompleteBox.style.left = rect.left + 10 + 'px';
-        autocompleteBox.style.top = rect.top + 30 + 'px';
-        autocompleteBox.innerHTML = match.map(m => `<div>${m}</div>`).join('');
-        autocompleteBox.style.display = 'block';
-
-        Array.from(autocompleteBox.children).forEach((item) => {
-          item.addEventListener('click', () => {
-            const before = editor.value.slice(0, text.lastIndexOf(lastLine));
-            const after = editor.value.slice(cursorPos);
-            editor.value = before + item.textContent + '\n' + after;
-            autocompleteBox.style.display = 'none';
-            editor.focus();
-          });
-        });
-      } else {
-        autocompleteBox.style.display = 'none';
-      }
-    });
   </script>
 
 </body>
