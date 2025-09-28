@@ -2,51 +2,31 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>MoleScript v1.0.3</title>
+  <title>MoleScript v1.4</title>
   <style>
-    body { font-family: sans-serif; display: flex; flex-wrap: wrap; gap: 20px; padding: 20px; }
+    body { font-family: sans-serif; display: flex; gap: 20px; padding: 20px; }
     textarea { width: 300px; height: 400px; font-family: monospace; }
     #canvas { width: 400px; height: 400px; background: #eee; position: relative; }
     .object { position: absolute; width: 40px; height: 40px; text-align: center; line-height: 40px; color: white; font-weight: bold; }
     #console { width: 300px; height: 400px; overflow-y: auto; background: #111; color: #0f0; padding: 10px; font-family: monospace; }
     button { padding: 10px 20px; font-size: 16px; margin-bottom: 10px; }
-    #autocomplete {
-      position: absolute;
-      background: white;
-      border: 1px solid #ccc;
-      font-family: monospace;
-      font-size: 14px;
-      display: none;
-      z-index: 10;
-      max-height: 150px;
-      overflow-y: auto;
-    }
-    #autocomplete div {
-      padding: 4px 8px;
-      cursor: pointer;
-    }
-    #autocomplete div:hover {
-      background: #def;
-    }
   </style>
 </head>
 <body>
 
   <div>
-    <button id="startBtn">Start</button>
+    <button onclick="runScript()">Start</button>
     <button onclick="openGuide()">Guide</button><br>
-    <textarea id="editor">// MoleScript v1.0.3
-spawn "fire" as player
-set player health to 100
-spawn "hazard" as spike
-move player right by 3
-move spike right by 3
+    <textarea id="editor">// MoleScript v1.4
+spawn "player" as player at 0,0
+spawn "wall" as wall at 4,4
+spawn "hazard" as lava at 5,5
 
-if player.pos = spike.pos:
-  player.damage 50
-  if player.health <= 0:
-    player.animate "death"</textarea>
-    <div id="autocomplete"></div>
+# pathfinding setup #
+pathfind([player], [wall], [lava], 9,9)
+
+loop 10 times:
+  step player toward path</textarea>
   </div>
 
   <div id="canvas"></div>
@@ -56,31 +36,10 @@ if player.pos = spike.pos:
     const canvas = document.getElementById('canvas');
     const consoleDiv = document.getElementById('console');
     const editor = document.getElementById('editor');
-    const startBtn = document.getElementById('startBtn');
-    const autocompleteBox = document.getElementById('autocomplete');
-
+    const gridSize = 10;
     const objects = {};
-    const variables = {};
-    const keyBindings = {};
-    let lines = [];
-
-    const moleCommands = [
-      'spawn "fire" as player',
-      'spawn "hazard" as spike',
-      'move player right by 1',
-      'set player color to "orange"',
-      'set player health to 100',
-      'player.damage 25',
-      'player.heal 10',
-      'say player "Hello!"',
-      'input as username',
-      'on key "right" then move player right by 1',
-      'loop 3 times:',
-      'wait 1s',
-      'if player.pos = spike.pos:',
-      'if player.health <= 0:',
-      'player.animate "death"'
-    ];
+    const costMap = Array.from({ length: gridSize }, () => Array(gridSize).fill(1));
+    const paths = {};
 
     function log(msg) {
       consoleDiv.innerHTML += msg + '<br>';
@@ -95,252 +54,213 @@ if player.pos = spike.pos:
         el.className = 'object';
         el.style.left = obj.x * 40 + 'px';
         el.style.top = obj.y * 40 + 'px';
-        el.style.background = obj.color;
+        el.style.background = obj.type === 'player' ? 'red' :
+                              obj.type === 'wall' ? 'black' :
+                              obj.type === 'hazard' ? 'orange' : 'blue';
         el.textContent = name;
         canvas.appendChild(el);
       }
     }
 
-    function substituteVars(text) {
-      return text.replace(/\{(\w+)\}/g, (_, key) => variables[key] || '');
-    }
+    function runScript() {
+      consoleDiv.innerHTML = '';
+      const raw = editor.value.replace(/#.*?#/g, '');
+      const lines = raw.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith('spawn')) {
+          const match = line.match(/spawn\s+"(\w+)"\s+as\s+(\w+)(?:\s+at\s+(\d+),(\d+))?/);
+          if (match) {
+            const [_, type, name, x, y] = match;
+            const ox = parseInt(x || 0);
+            const oy = parseInt(y || 0);
+            objects[name] = { type, x: ox, y: oy };
+            if (type === 'wall') costMap[oy][ox] = Infinity;
+            if (type === 'hazard') {
+              costMap[oy][ox] = 20;
+              for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                  const nx = ox + dx, ny = oy + dy;
+                  if (nx >= 0 && ny >= 0 && nx < gridSize && ny < gridSize && costMap[ny][nx] !== Infinity) {
+                    costMap[ny][nx] += 10;
+                  }
+                }
+              }
+            }
+            log(`Spawned ${type} as ${name} at ${ox},${oy}`);
+          }
+        } else if (line.startsWith('pathfind')) {
+          const match = line.match(/pathfind\(\s*
 
-    function getValue(expr) {
-      const parts = expr.split('.');
-      if (parts.length === 2 && objects[parts[0]]) {
-        const obj = objects[parts[0]];
-        if (parts[1] === 'posx') return obj.x;
-        if (parts[1] === 'posy') return obj.y;
-        if (parts[1] === 'health') return obj.health || 0;
-        if (parts[1] === 'pos') return obj.x + ',' + obj.y;
-      }
-      return parseFloat(expr) || expr;
-    }
+\[([^\]
 
-    function execute(line) {
-      line = line.trim();
-      if (line.startsWith('spawn')) {
-        const match = line.match(/spawn\s+"(.+)"\s+as\s+(\w+)/);
-        if (match) {
-          const [_, type, name] = match;
-          if (!objects[name]) {
-            objects[name] = { type, x: 0, y: 0, color: type === 'fire' ? 'red' : 'blue', health: 100 };
-            log(`Spawned ${type} as ${name}`);
-          }
-        }
-      } else if (line.startsWith('move')) {
-        const match = line.match(/move\s+(\w+)\s+(up|down|left|right)\s+by\s+(\d+)/);
-        if (match) {
-          const [_, name, dir, amount] = match;
-          const obj = objects[name];
-          if (obj) {
-            const amt = parseInt(amount);
-            if (dir === 'up') obj.y -= amt;
-            if (dir === 'down') obj.y += amt;
-            if (dir === 'left') obj.x -= amt;
-            if (dir === 'right') obj.x += amt;
-            log(`Moved ${name} ${dir} by ${amt}`);
-          }
-        }
-      } else if (line.startsWith('set')) {
-        const match = line.match(/set\s+(\w+)\s+(color|health)\s+to\s+"?(.+?)"?$/);
-        if (match) {
-          const [_, name, prop, value] = match;
-          const obj = objects[name];
-          if (obj) {
-            obj[prop] = prop === 'health' ? parseInt(value) : value;
-            log(`Set ${name}'s ${prop} to ${value}`);
-          }
-        }
-      } else if (line.startsWith('say')) {
-        const match = line.match(/say\s+(\w+)\s+"(.+)"/);
-        if (match) {
-          const [_, name, message] = match;
-          if (objects[name]) {
-            log(`${name} says: "${substituteVars(message)}"`);
-          }
-        }
-      } else if (line.startsWith('input')) {
-        const match = line.match(/input\s+as\s+(\w+)/);
-        if (match) {
-          const varname = match[1];
-          const value = prompt(`Enter value for ${varname}:`);
-          variables[varname] = value;
-          log(`Input received: ${varname} = "${value}"`);
-        }
-      } else if (line.startsWith('on key')) {
-        const match = line.match(/on key\s+"(.+)"\s+then\s+(.+)/);
-        if (match) {
-          const [_, keyName, command] = match;
-          keyBindings[keyName] = command;
-          log(`Bound key "${keyName}" to command: ${command}`);
-        }
-      } else if (line.startsWith('loop')) {
-        const match = line.match(/loop\s+(\d+)\s+times:/);
-        if (match) {
-          const count = parseInt(match[1]);
-          const block = [];
-          let i = lines.indexOf(line) + 1;
-          while (i < lines.length && lines[i].startsWith('  ')) {
-            block.push(lines[i].trim());
-            i++;
-          }
-          for (let j = 0; j < count; j++) {
-            block.forEach((cmd, k) => {
-              setTimeout(() => {
-                execute(cmd);
-                render();
-              }, (j * block.length + k) * 500);
-            });
-          }
-        }
-      } else if (line.startsWith('wait')) {
-        const match = line.match(/wait\s+([\d.]+)s/);
-        if (match) {
-          const delay = parseFloat(match[1]) * 1000;
-          log(`Waiting ${delay}ms...`);
-        }
-      } else if (line.startsWith('if')) {
-        const match = line.match(/if\s+(.+?)\s*(=|!=|<=|>=|<|>)\s*(.+?):/);
-        if (match) {
-          const [_, left, op, right] = match;
-          const a = getValue(left);
-          const b = getValue(right);
-          let condition = false;
-          if (op === '=') condition = a === b;
-                    if (op === '!=') condition = a !== b;
-          if (op === '<') condition = a < b;
-          if (op === '>') condition = a > b;
-          if (op === '<=') condition = a <= b;
-          if (op === '>=') condition = a >= b;
-          if (condition) {
-            let i = lines.indexOf(line) + 1;
-            while (i < lines.length && lines[i].startsWith('  ')) {
-              execute(lines[i].trim());
-              i++;
+]+)\]
+
+,\s*
+
+\[([^\]
+
+]*)\]
+
+,\s*
+
+\[([^\]
+
+]*)\]
+
+,\s*(\d+),\s*(\d+)\)/);
+          if (match) {
+            const agents = match[1].split(',').map(s => s.trim());
+            const walls = match[2].split(',').map(s => s.trim());
+            const hazards = match[3].split(',').map(s => s.trim());
+            const gx = parseInt(match[4]), gy = parseInt(match[5]);
+
+            for (const name of walls) {
+              const obj = objects[name];
+              if (obj) costMap[obj.y][obj.x] = Infinity;
+            }
+            for (const name of hazards) {
+              const obj = objects[name];
+              if (obj) {
+                costMap[obj.y][obj.x] = 20;
+                for (let dy = -1; dy <= 1; dy++) {
+                  for (let dx = -1; dx <= 1; dx++) {
+                    const nx = obj.x + dx, ny = obj.y + dy;
+                    if (nx >= 0 && ny >= 0 && nx < gridSize && ny < gridSize && costMap[ny][nx] !== Infinity) {
+                      costMap[ny][nx] += 10;
+                    }
+                  }
+                }
+              }
+            }
+
+            for (const name of agents) {
+              const obj = objects[name];
+              if (obj) {
+                paths[name] = findPath(obj.x, obj.y, gx, gy);
+                log(`Path computed for ${name}`);
+              }
             }
           }
-        }
-      } else if (line.includes('.damage')) {
-        const match = line.match(/(\w+)\.damage\s+(\d+)/);
-        if (match) {
-          const [_, name, amount] = match;
-          const obj = objects[name];
-          if (obj) {
-            obj.health = Math.max(0, (obj.health || 100) - parseInt(amount));
-            log(`${name} takes ${amount} damage (health: ${obj.health})`);
+        } else if (line.startsWith('loop')) {
+          const match = line.match(/loop\s+(\d+)\s+times:/);
+          if (match) {
+            const count = parseInt(match[1]);
+            const block = [];
+            let j = i + 1;
+            while (j < lines.length && lines[j].startsWith('  ')) {
+              block.push(lines[j].trim());
+              j++;
+            }
+            for (let k = 0; k < count; k++) {
+              block.forEach(cmd => execute(cmd));
+            }
+            i = j - 1;
           }
-        }
-      } else if (line.includes('.heal')) {
-        const match = line.match(/(\w+)\.heal\s+(\d+)/);
-        if (match) {
-          const [_, name, amount] = match;
-          const obj = objects[name];
-          if (obj) {
-            obj.health = (obj.health || 100) + parseInt(amount);
-            log(`${name} heals ${amount} (health: ${obj.health})`);
-          }
-        }
-      } else if (line.includes('.animate')) {
-        const match = line.match(/(\w+)\.animate\s+"(.+)"/);
-        if (match) {
-          const [_, name, effect] = match;
-          log(`${name} performs animation: ${effect}`);
+        } else {
+          execute(line);
         }
       }
       render();
     }
 
-    function parse(script) {
-      consoleDiv.innerHTML = '';
-      lines = script.split('\n');
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        if (!line.startsWith('  ')) {
-          execute(line);
+    function execute(line) {
+      if (line.startsWith('step')) {
+        const match = line.match(/step\s+(\w+)\s+toward\s+path/);
+        if (match) {
+          const name = match[1];
+          const obj = objects[name];
+          const path = paths[name];
+          if (obj && path && path.length > 0) {
+            const next = path.shift();
+            obj.x = next.x;
+            obj.y = next.y;
+            log(`Moved ${name} to ${next.x},${next.y}`);
+            render();
+          }
         }
       }
     }
 
-    startBtn.addEventListener('click', () => {
-      parse(editor.value);
-    });
-
-    document.addEventListener('keydown', (e) => {
-      const command = keyBindings[e.key];
-      if (command) {
-        execute(command);
+    function findPath(sx, sy, gx, gy) {
+      const visited = Array.from({ length: gridSize }, () => Array(gridSize).fill(false));
+      const cost = Array.from({ length: gridSize }, () => Array(gridSize).fill(Infinity));
+      const prev = Array.from({ length: gridSize }, () => Array(gridSize).fill(null));
+      cost[sy][sx] = 0;
+      const queue = [{ x: sx, y: sy }];
+      while (queue.length) {
+        queue.sort((a, b) => cost[a.y][a.x] - cost[b.y][b.x]);
+        const { x, y } = queue.shift();
+        if (visited[y][x]) continue;
+        visited[y][x] = true;
+        const dirs = [[0,1],[1,0],[0,-1],[-1,0]];
+        for (const [dx, dy] of dirs) {
+          const nx = x + dx, ny = y + dy;
+          if (nx >= 0 && ny >= 0 && nx < gridSize && ny < gridSize && !visited[ny][nx]) {
+            const newCost = cost[y][x] + costMap[ny][nx];
+            if (newCost < cost[ny][nx]) {
+              cost[ny][nx] = newCost;
+              prev[ny][nx] = { x, y };
+              queue.push({ x: nx, y: ny });
+            }
+          }
+        }
       }
-    });
 
-    editor.addEventListener('keyup', (e) => {
-      const cursorPos = editor.selectionStart;
-      const text = editor.value.slice(0, cursorPos);
-      const lastLine = text.split('\n').pop();
-      const match = moleCommands.filter(cmd => cmd.startsWith(lastLine.trim()));
-
-      if (match.length > 0 && lastLine.trim().length > 0) {
-        const rect = editor.getBoundingClientRect();
-        autocompleteBox.style.left = rect.left + 10 + 'px';
-        autocompleteBox.style.top = rect.top + 30 + 'px';
-        autocompleteBox.innerHTML = match.map(m => `<div>${m}</div>`).join('');
-        autocompleteBox.style.display = 'block';
-
-        Array.from(autocompleteBox.children).forEach((item) => {
-          item.addEventListener('click', () => {
-            const before = editor.value.slice(0, text.lastIndexOf(lastLine));
-            const after = editor.value.slice(cursorPos);
-            editor.value = before + item.textContent + '\n' + after;
-            autocompleteBox.style.display = 'none';
-            editor.focus();
-          });
-        });
-      } else {
-        autocompleteBox.style.display = 'none';
+      let path = [];
+      let cx = gx, cy = gy;
+      while (prev[cy][cx]) {
+        path.unshift({ x: cx, y: cy });
+        const p = prev[cy][cx];
+        cx = p.x;
+        cy = p.y;
       }
-    });
+            return path;
+    }
 
     function openGuide() {
-      const guideWindow = window.open("", "MoleScriptGuide", "width=800,height=600");
-      guideWindow.document.write(`<!DOCTYPE html><html><head><title>MoleScript v1.0.3 Guide</title>
-      <style>body{font-family:sans-serif;max-width:700px;margin:auto;padding:20px;line-height:1.6;}
-      h1,h2,h3{color:#c33;}code{background:#f4f4f4;padding:2px 6px;border-radius:4px;font-family:monospace;}
-      pre{background:#f4f4f4;padding:10px;border-radius:6px;overflow-x:auto;}</style></head><body>
-      <h1>🧭 MoleScript v1.0.3 Guide</h1>
-      <h2>🚀 Overview</h2><ul>
-      <li>✅ Health system (<code>set</code>, <code>damage</code>, <code>heal</code>)</li>
-      <li>✅ Position logic (<code>pos</code>, <code>posx</code>, <code>posy</code>)</li>
-      <li>✅ Conditional checks (<code>if player.health <= 0</code>)</li>
-      <li>✅ Method-style calls (<code>player.animate "death"</code>)</li>
-      <li>✅ Autocomplete support</li></ul>
-      <h2>🧱 Core Syntax</h2><pre><code>spawn "fire" as player
-set player health to 100
-move player right by 3
-say player "Health: {player.health}"</code></pre>
-      <h2>🧠 Reactive Logic</h2><pre><code>if player.pos = spike.pos:
-  player.damage 50
-  if player.health <= 0:
-    player.animate "death"</code></pre>
-      <h2>🩹 Effects</h2><pre><code>player.damage 25
-player.heal 10
-player.animate "spin"</code></pre>
-      <h2>🔁 Control Flow</h2><pre><code>loop 3 times:
-  move player down by 1
-  wait 0.5s</code></pre>
-      <h2>🎮 Input</h2><pre><code>input as username
-on key "right" then move player right by 1</code></pre>
-      <h2>🧪 Sample Script</h2><pre><code>spawn "fire" as player
-set player health to 100
-spawn "hazard" as spike
-move player right by 3
-move spike right by 3
+  const guideWindow = window.open("", "MoleScriptGuide", "width=800,height=600");
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>MoleScript v1.4 Guide</title>
+      <style>
+        body { font-family: sans-serif; max-width: 700px; margin: auto; padding: 20px; line-height: 1.6; }
+        h1, h2, h3 { color: #c33; }
+        code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
+        pre { background: #f4f4f4; padding: 10px; border-radius: 6px; overflow-x: auto; }
+      </style>
+    </head>
+    <body>
+      <h1>🧭 MoleScript v1.4 Guide</h1>
+      <h2>🚀 Core Commands</h2>
+      <ul>
+        <li><code>spawn "type" as name at x,y</code> — create an object</li>
+        <li><code>pathfind([agents], [walls], [hazards], goalX, goalY)</code> — compute paths</li>
+        <li><code>step name toward path</code> — move one tile along path</li>
+        <li><code>loop N times:</code> — repeat a block</li>
+        <li><code># comment #</code> — inline comment</li>
+      </ul>
+      <h2>🧪 Sample Script</h2>
+      <pre><code>spawn "player" as player at 0,0
+spawn "wall" as wall at 4,4
+spawn "hazard" as lava at 5,5
 
-if player.pos = spike.pos:
-  player.damage 50
-  if player.health <= 0:
-    player.animate "death"</code></pre>
-      </body></html>`);
-    }
+# pathfinding setup #
+pathfind([player], [wall], [lava], 9,9)
+
+loop 10 times:
+  step player toward path</code></pre>
+    </body>
+    </html>
+  `;
+  guideWindow.document.open();
+  guideWindow.document.write(htmlContent);
+  guideWindow.document.close();
+}
+
+
   </script>
 
 </body>
