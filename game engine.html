@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <title>MoleScript Live Interpreter</title>
   <style>
-    body { font-family: sans-serif; display: flex; gap: 20px; padding: 20px; flex-wrap: wrap; }
+    body { font-family: sans-serif; display: flex; flex-wrap: wrap; gap: 20px; padding: 20px; }
     textarea { width: 300px; height: 400px; font-family: monospace; }
     #canvas { width: 400px; height: 400px; background: #eee; position: relative; }
     .object { position: absolute; width: 40px; height: 40px; text-align: center; line-height: 40px; color: white; font-weight: bold; }
@@ -19,9 +19,15 @@
     <textarea id="editor">// MoleScript
 input as username
 say player "Hello, {username}!"
+spawn "fire" as player
 on key "right" then move player right by 1
-on key "space" then say player "Jump!"
-spawn "fire" as player</textarea>
+loop 3 times:
+  move player down by 1
+  wait 0.5s
+if player at (3,3):
+  say player "I'm at (3,3)!"
+player.attack "enemy"
+player.animate "spin"</textarea>
   </div>
 
   <div id="canvas"></div>
@@ -36,14 +42,9 @@ spawn "fire" as player</textarea>
     const objects = {};
     const variables = {};
     const keyBindings = {};
-
     const keyMap = {
-      right: "ArrowRight",
-      left: "ArrowLeft",
-      up: "ArrowUp",
-      down: "ArrowDown",
-      space: " ",
-      enter: "Enter"
+      right: "ArrowRight", left: "ArrowLeft", up: "ArrowUp", down: "ArrowDown",
+      space: " ", enter: "Enter"
     };
 
     function log(msg) {
@@ -128,14 +129,68 @@ spawn "fire" as player</textarea>
           keyBindings[actualKey] = command;
           log(`Bound key "${keyName}" to command: ${command}`);
         }
+      } else if (line.startsWith('loop')) {
+        const match = line.match(/loop\s+(\d+)\s+times:/);
+        if (match) {
+          const count = parseInt(match[1]);
+          const block = [];
+          let i = lines.indexOf(line) + 1;
+          while (i < lines.length && lines[i].startsWith('  ')) {
+            block.push(lines[i].trim());
+            i++;
+          }
+          for (let j = 0; j < count; j++) {
+            block.forEach((cmd, k) => {
+              setTimeout(() => {
+                execute(cmd);
+                render();
+              }, (j * block.length + k) * 500);
+            });
+          }
+        }
+      } else if (line.startsWith('wait')) {
+        const match = line.match(/wait\s+([\d.]+)s/);
+        if (match) {
+          const delay = parseFloat(match[1]) * 1000;
+          log(`Waiting ${delay}ms...`);
+        }
+      } else if (line.startsWith('if')) {
+        const match = line.match(/if\s+(\w+)\s+at\s+\((\d+),\s*(\d+)\):/);
+        if (match) {
+          const [_, name, x, y] = match;
+          const obj = objects[name];
+          if (obj && obj.x === parseInt(x) && obj.y === parseInt(y)) {
+            let i = lines.indexOf(line) + 1;
+            while (i < lines.length && lines[i].startsWith('  ')) {
+              execute(lines[i].trim());
+              i++;
+            }
+          }
+        }
+      } else if (line.includes('.attack')) {
+        const match = line.match(/(\w+)\.attack\s+"(.+)"/);
+        if (match) {
+          const [_, attacker, target] = match;
+          log(`${attacker} attacks ${target}!`);
+        }
+      } else if (line.includes('.animate')) {
+        const match = line.match(/(\w+)\.animate\s+"(.+)"/);
+        if (match) {
+          const [_, name, effect] = match;
+          log(`${name} performs animation: ${effect}`);
+        }
       }
     }
 
+    let lines = [];
+
     function parse(script) {
       consoleDiv.innerHTML = '';
-      const lines = script.split('\n');
+      lines = script.split('\n');
       for (let line of lines) {
-        execute(line);
+        if (!line.startsWith('  ')) {
+          execute(line);
+        }
       }
       render();
     }
