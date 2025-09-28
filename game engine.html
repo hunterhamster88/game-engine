@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>MoleScript Interpreter</title>
   <style>
     body { font-family: sans-serif; display: flex; flex-wrap: wrap; gap: 20px; padding: 20px; }
@@ -35,18 +35,16 @@
   <div>
     <button id="startBtn">Start</button><br>
     <textarea id="editor">// MoleScript
-input as username
 spawn "fire" as player
-set player color to "red"
-say player "Hello, {username}!"
-on key "right" then move player right by 1
-loop 3 times:
-  move player down by 1
-  wait 0.5s
-if player at (3,3):
-  say player "I'm at the target!"
-player.attack "enemy"
-player.animate "spin"</textarea>
+set player health to 100
+spawn "hazard" as spike
+move player right by 3
+move spike right by 3
+
+if player.pos = spike.pos:
+  player.damage 50
+  if player.health <= 0:
+    player.animate "death"</textarea>
     <div id="autocomplete"></div>
   </div>
 
@@ -72,18 +70,20 @@ player.animate "spin"</textarea>
 
     const moleCommands = [
       'spawn "fire" as player',
-      'spawn "water" as enemy',
+      'spawn "hazard" as spike',
       'move player right by 1',
-      'move player down by 1',
       'set player color to "orange"',
+      'set player health to 100',
+      'player.damage 25',
+      'player.heal 10',
       'say player "Hello!"',
       'input as username',
       'on key "right" then move player right by 1',
       'loop 3 times:',
       'wait 1s',
-      'if player at (3,3):',
-      'player.attack "enemy"',
-      'player.animate "spin"'
+      'if player.pos = spike.pos:',
+      'if player.health <= 0:',
+      'player.animate "death"'
     ];
 
     function log(msg) {
@@ -109,6 +109,18 @@ player.animate "spin"</textarea>
       return text.replace(/\{(\w+)\}/g, (_, key) => variables[key] || '');
     }
 
+    function getValue(expr) {
+      const parts = expr.split('.');
+      if (parts.length === 2 && objects[parts[0]]) {
+        const obj = objects[parts[0]];
+        if (parts[1] === 'posx') return obj.x;
+        if (parts[1] === 'posy') return obj.y;
+        if (parts[1] === 'health') return obj.health || 0;
+        if (parts[1] === 'pos') return `${obj.x},${obj.y}`;
+      }
+      return parseFloat(expr) || 0;
+    }
+
     function execute(line) {
       line = line.trim();
       if (line.startsWith('spawn')) {
@@ -116,7 +128,7 @@ player.animate "spin"</textarea>
         if (match) {
           const [_, type, name] = match;
           if (!objects[name]) {
-            objects[name] = { type, x: 0, y: 0, color: type === 'fire' ? 'red' : 'blue' };
+            objects[name] = { type, x: 0, y: 0, color: type === 'fire' ? 'red' : 'blue', health: 100 };
             log(`Spawned ${type} as ${name}`);
           }
         }
@@ -135,13 +147,13 @@ player.animate "spin"</textarea>
           }
         }
       } else if (line.startsWith('set')) {
-        const match = line.match(/set\s+(\w+)\s+color\s+to\s+"(.+)"/);
+        const match = line.match(/set\s+(\w+)\s+(color|health)\s+to\s+"?(.+?)"?$/);
         if (match) {
-          const [_, name, color] = match;
+          const [_, name, prop, value] = match;
           const obj = objects[name];
           if (obj) {
-            obj.color = color;
-            log(`Set ${name}'s color to ${color}`);
+            obj[prop] = prop === 'health' ? parseInt(value) : value;
+            log(`Set ${name}'s ${prop} to ${value}`);
           }
         }
       } else if (line.startsWith('say')) {
@@ -194,11 +206,19 @@ player.animate "spin"</textarea>
           log(`Waiting ${delay}ms...`);
         }
       } else if (line.startsWith('if')) {
-        const match = line.match(/if\s+(\w+)\s+at\s+\((\d+),\s*(\d+)\):/);
+        const match = line.match(/if\s+(.+?)\s*(=|!=|<=|>=|<|>)\s*(.+?):/);
         if (match) {
-          const [_, name, x, y] = match;
-          const obj = objects[name];
-          if (obj && obj.x === parseInt(x) && obj.y === parseInt(y)) {
+          const [_, left, op, right] = match;
+          const a = getValue(left);
+                    const b = getValue(right);
+          let condition = false;
+          if (op === '=') condition = a === b;
+          if (op === '!=') condition = a !== b;
+          if (op === '<') condition = a < b;
+          if (op === '>') condition = a > b;
+          if (op === '<=') condition = a <= b;
+          if (op === '>=') condition = a >= b;
+          if (condition) {
             let i = lines.indexOf(line) + 1;
             while (i < lines.length && lines[i].startsWith('  ')) {
               execute(lines[i].trim());
@@ -206,11 +226,25 @@ player.animate "spin"</textarea>
             }
           }
         }
-      } else if (line.includes('.attack')) {
-        const match = line.match(/(\w+)\.attack\s+"(.+)"/);
+      } else if (line.includes('.damage')) {
+        const match = line.match(/(\w+)\.damage\s+(\d+)/);
         if (match) {
-          const [_, attacker, target] = match;
-          log(`${attacker} attacks ${target}!`);
+          const [_, name, amount] = match;
+          const obj = objects[name];
+          if (obj) {
+            obj.health = Math.max(0, (obj.health || 100) - parseInt(amount));
+            log(`${name} takes ${amount} damage (health: ${obj.health})`);
+          }
+        }
+      } else if (line.includes('.heal')) {
+        const match = line.match(/(\w+)\.heal\s+(\d+)/);
+        if (match) {
+          const [_, name, amount] = match;
+          const obj = objects[name];
+          if (obj) {
+            obj.health = (obj.health || 100) + parseInt(amount);
+            log(`${name} heals ${amount} (health: ${obj.health})`);
+          }
         }
       } else if (line.includes('.animate')) {
         const match = line.match(/(\w+)\.animate\s+"(.+)"/);
@@ -222,51 +256,55 @@ player.animate "spin"</textarea>
     }
 
     function parse(script) {
-  consoleDiv.innerHTML = '';
-  lines = script.split('\n');
-  for (let line of lines) {
-    if (!line.startsWith('  ')) {
-      execute(line);
+      consoleDiv.innerHTML = '';
+      lines = script.split('\n');
+      for (let line of lines) {
+        if (!line.startsWith('  ')) {
+          execute(line);
+        }
+      }
+      render();
     }
-  }
-  render();
-}
 
-startBtn.addEventListener('click', () => {
-  parse(editor.value);
-});
-
-document.addEventListener('keydown', (e) => {
-  const command = keyBindings[e.key];
-  if (command) {
-    execute(command);
-    render();
-  }
-});
-
-editor.addEventListener('keyup', (e) => {
-  const cursorPos = editor.selectionStart;
-  const text = editor.value.slice(0, cursorPos);
-  const lastLine = text.split('\n').pop();
-  const match = moleCommands.filter(cmd => cmd.startsWith(lastLine.trim()));
-
-  if (match.length > 0 && lastLine.trim().length > 0) {
-    const rect = editor.getBoundingClientRect();
-    autocompleteBox.style.left = rect.left + 10 + 'px';
-    autocompleteBox.style.top = rect.top + 30 + 'px';
-    autocompleteBox.innerHTML = match.map(m => `<div>${m}</div>`).join('');
-    autocompleteBox.style.display = 'block';
-
-    Array.from(autocompleteBox.children).forEach((item) => {
-      item.addEventListener('click', () => {
-        const before = editor.value.slice(0, text.lastIndexOf(lastLine));
-        const after = editor.value.slice(cursorPos);
-        editor.value = before + item.textContent + '\n' + after;
-        autocompleteBox.style.display = 'none';
-        editor.focus();
-      });
+    startBtn.addEventListener('click', () => {
+      parse(editor.value);
     });
-  } else {
-    autocompleteBox.style.display = 'none';
-  }
-});
+
+    document.addEventListener('keydown', (e) => {
+      const command = keyBindings[e.key];
+      if (command) {
+        execute(command);
+        render();
+      }
+    });
+
+    editor.addEventListener('keyup', (e) => {
+      const cursorPos = editor.selectionStart;
+      const text = editor.value.slice(0, cursorPos);
+      const lastLine = text.split('\n').pop();
+      const match = moleCommands.filter(cmd => cmd.startsWith(lastLine.trim()));
+
+      if (match.length > 0 && lastLine.trim().length > 0) {
+        const rect = editor.getBoundingClientRect();
+        autocompleteBox.style.left = rect.left + 10 + 'px';
+        autocompleteBox.style.top = rect.top + 30 + 'px';
+        autocompleteBox.innerHTML = match.map(m => `<div>${m}</div>`).join('');
+        autocompleteBox.style.display = 'block';
+
+        Array.from(autocompleteBox.children).forEach((item) => {
+          item.addEventListener('click', () => {
+            const before = editor.value.slice(0, text.lastIndexOf(lastLine));
+            const after = editor.value.slice(cursorPos);
+            editor.value = before + item.textContent + '\n' + after;
+            autocompleteBox.style.display = 'none';
+            editor.focus();
+          });
+        });
+      } else {
+        autocompleteBox.style.display = 'none';
+      }
+    });
+  </script>
+
+</body>
+</html>
