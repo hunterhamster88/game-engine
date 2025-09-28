@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>MoleScript Live Interpreter</title>
+  <title>MoleScript Interpreter</title>
   <style>
     body { font-family: sans-serif; display: flex; flex-wrap: wrap; gap: 20px; padding: 20px; }
     textarea { width: 300px; height: 400px; font-family: monospace; }
@@ -10,6 +10,24 @@
     .object { position: absolute; width: 40px; height: 40px; text-align: center; line-height: 40px; color: white; font-weight: bold; }
     #console { width: 300px; height: 400px; overflow-y: auto; background: #111; color: #0f0; padding: 10px; font-family: monospace; }
     button { padding: 10px 20px; font-size: 16px; margin-bottom: 10px; }
+    #autocomplete {
+      position: absolute;
+      background: white;
+      border: 1px solid #ccc;
+      font-family: monospace;
+      font-size: 14px;
+      display: none;
+      z-index: 10;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+    #autocomplete div {
+      padding: 4px 8px;
+      cursor: pointer;
+    }
+    #autocomplete div:hover {
+      background: #def;
+    }
   </style>
 </head>
 <body>
@@ -18,16 +36,18 @@
     <button id="startBtn">Start</button><br>
     <textarea id="editor">// MoleScript
 input as username
-say player "Hello, {username}!"
 spawn "fire" as player
+set player color to "red"
+say player "Hello, {username}!"
 on key "right" then move player right by 1
 loop 3 times:
   move player down by 1
   wait 0.5s
 if player at (3,3):
-  say player "I'm at (3,3)!"
+  say player "I'm at the target!"
 player.attack "enemy"
 player.animate "spin"</textarea>
+    <div id="autocomplete"></div>
   </div>
 
   <div id="canvas"></div>
@@ -38,14 +58,33 @@ player.animate "spin"</textarea>
     const consoleDiv = document.getElementById('console');
     const editor = document.getElementById('editor');
     const startBtn = document.getElementById('startBtn');
+    const autocompleteBox = document.getElementById('autocomplete');
 
     const objects = {};
     const variables = {};
     const keyBindings = {};
+    let lines = [];
+
     const keyMap = {
       right: "ArrowRight", left: "ArrowLeft", up: "ArrowUp", down: "ArrowDown",
       space: " ", enter: "Enter"
     };
+
+    const moleCommands = [
+      'spawn "fire" as player',
+      'spawn "water" as enemy',
+      'move player right by 1',
+      'move player down by 1',
+      'set player color to "orange"',
+      'say player "Hello!"',
+      'input as username',
+      'on key "right" then move player right by 1',
+      'loop 3 times:',
+      'wait 1s',
+      'if player at (3,3):',
+      'player.attack "enemy"',
+      'player.animate "spin"'
+    ];
 
     function log(msg) {
       consoleDiv.innerHTML += msg + '<br>';
@@ -182,31 +221,52 @@ player.animate "spin"</textarea>
       }
     }
 
-    let lines = [];
-
     function parse(script) {
-      consoleDiv.innerHTML = '';
-      lines = script.split('\n');
-      for (let line of lines) {
-        if (!line.startsWith('  ')) {
-          execute(line);
-        }
-      }
-      render();
+  consoleDiv.innerHTML = '';
+  lines = script.split('\n');
+  for (let line of lines) {
+    if (!line.startsWith('  ')) {
+      execute(line);
     }
+  }
+  render();
+}
 
-    startBtn.addEventListener('click', () => {
-      parse(editor.value);
+startBtn.addEventListener('click', () => {
+  parse(editor.value);
+});
+
+document.addEventListener('keydown', (e) => {
+  const command = keyBindings[e.key];
+  if (command) {
+    execute(command);
+    render();
+  }
+});
+
+editor.addEventListener('keyup', (e) => {
+  const cursorPos = editor.selectionStart;
+  const text = editor.value.slice(0, cursorPos);
+  const lastLine = text.split('\n').pop();
+  const match = moleCommands.filter(cmd => cmd.startsWith(lastLine.trim()));
+
+  if (match.length > 0 && lastLine.trim().length > 0) {
+    const rect = editor.getBoundingClientRect();
+    autocompleteBox.style.left = rect.left + 10 + 'px';
+    autocompleteBox.style.top = rect.top + 30 + 'px';
+    autocompleteBox.innerHTML = match.map(m => `<div>${m}</div>`).join('');
+    autocompleteBox.style.display = 'block';
+
+    Array.from(autocompleteBox.children).forEach((item) => {
+      item.addEventListener('click', () => {
+        const before = editor.value.slice(0, text.lastIndexOf(lastLine));
+        const after = editor.value.slice(cursorPos);
+        editor.value = before + item.textContent + '\n' + after;
+        autocompleteBox.style.display = 'none';
+        editor.focus();
+      });
     });
-
-    document.addEventListener('keydown', (e) => {
-      const command = keyBindings[e.key];
-      if (command) {
-        execute(command);
-        render();
-      }
-    });
-  </script>
-
-</body>
-</html>
+  } else {
+    autocompleteBox.style.display = 'none';
+  }
+});
