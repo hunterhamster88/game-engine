@@ -31,7 +31,7 @@ wait 500 milliseconds
 step Molecmon to 10 10
 loop 3 times:
   log Molecmon moved to {x} {y}
-for i+1 in "molefun":
+for i=1 in "molefun":
   log {i}</textarea>
     <br>
     <button onclick="run()">Run</button>
@@ -50,165 +50,178 @@ for i+1 in "molefun":
 - wait N frames / milliseconds / seconds
 - loop N times:
 - for var±N in "string":
+- for var=N in "string":
 - log message
 - spawn name at x y
 - step name to x y
 - pathfind name to x y (coming soon)
     </pre>
   </div>
-<script>
-const output = document.getElementById('output');
-const canvas = document.getElementById('grid');
-const ctx = canvas.getContext('2d');
-let variables = {};
-let objects = {};
-let gridSize = 20;
 
-function log(msg) {
-  output.textContent += msg + '\n';
-}
+  <script>
+    const output = document.getElementById('output');
+    const canvas = document.getElementById('grid');
+    const ctx = canvas.getContext('2d');
+    let variables = {};
+    let objects = {};
+    let gridSize = 20;
 
-function drawGrid() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const cellSize = canvas.width / gridSize;
-  ctx.strokeStyle = '#555';
-  ctx.font = '12px monospace';
-  ctx.textBaseline = 'top';
-  for (let x = 0; x < gridSize; x++) {
-    for (let y = 0; y < gridSize; y++) {
-      ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
-    }
-  }
-  for (const name in objects) {
-    const obj = objects[name];
-    ctx.fillStyle = obj.color || '#0f0';
-    ctx.fillRect(obj.x * cellSize, obj.y * cellSize, cellSize, cellSize);
-    ctx.fillStyle = '#000';
-    ctx.fillText(name, obj.x * cellSize + 2, obj.y * cellSize + 2);
-  }
-}
-
-function resolveVariables(line) {
-  return line.replace(/\{(\w+)\}/g, (_, name) => variables[name] ?? `{${name}}`);
-}
-
-function wrapIndex(i, length) {
-  return ((i % length) + length) % length;
-}
-
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function getIndentedBlock(lines, startIndex) {
-  const block = [];
-  let i = startIndex + 1;
-  while (i < lines.length && lines[i].startsWith('  ')) {
-    block.push(lines[i].trim());
-    i++;
-  }
-  return block;
-}
-
-async function runScript(lines) {
-  for (let i = 0; i < lines.length; i++) {
-    let line = resolveVariables(lines[i].trim());
-
-    if (line.startsWith('set ')) {
-      const match = line.match(/set (\w+) to (.+)/);
-      if (match) variables[match[1]] = isNaN(match[2]) ? match[2] : parseInt(match[2]);
+    function log(msg) {
+      output.textContent += msg + '\n';
     }
 
-    else if (line.startsWith('wait')) {
-      const match = line.match(/wait (.+?) (frames|milliseconds|seconds)/);
-      if (match) {
-        const value = parseInt(resolveVariables(match[1]));
-        const unit = match[2];
-        const ms = unit === 'seconds' ? value * 1000 : unit === 'milliseconds' ? value : value * 16;
-        await delay(ms);
-      }
-    }
-
-    else if (line.startsWith('loop')) {
-      const match = line.match(/loop (\d+) times:/);
-      if (match) {
-        const count = parseInt(match[1]);
-        const block = getIndentedBlock(lines, i);
-        for (let k = 0; k < count; k++) {
-          for (const cmd of block) await runScript([cmd]);
-        }
-        i += block.length;
-      }
-    }
-
-    else if (line.match(/for (\w+)([+-]\d+)? in "(.+)":/)) {
-      const [, varName, offsetRaw, str] = line.match(/for (\w+)([+-]\d+)? in "(.+)":/);
-      const offset = offsetRaw ? parseInt(offsetRaw) : 0;
-      const block = getIndentedBlock(lines, i);
-      for (let k = 0; k < str.length; k++) {
-        const index = wrapIndex(k + offset, str.length);
-        variables[varName] = str[index];
-        for (const cmd of block) await runScript([cmd]);
-      }
-      i += block.length;
-    }
-
-    else if (line.startsWith('log ')) {
-      log(line.slice(4));
-    }
-
-    else if (line.startsWith('set bounds to')) {
-      const match = line.match(/set bounds to (\d+)x(\d+)/);
-      if (match) {
-        gridSize = parseInt(match[1]);
-        canvas.width = gridSize * 20;
-        canvas.height = gridSize * 20;
-        drawGrid();
-      }
-    }
-
-    else if (line.startsWith('spawn')) {
-      const match = line.match(/spawn (\w+) at (\d+) (\d+)/);
-      if (match) {
-        const name = match[1];
-        const x = parseInt(match[2]);
-        const y = parseInt(match[3]);
-        objects[name] = { x, y };
-        drawGrid();
-      }
-    }
-
-    else if (line.startsWith('step')) {
-      const match = line.match(/step (\w+) to (\d+) (\d+)/);
-      if (match) {
-        const name = match[1];
-        const x = parseInt(match[2]);
-        const y = parseInt(match[3]);
-        if (objects[name]) {
-          objects[name].x = x;
-          objects[name].y = y;
-          drawGrid();
+    function drawGrid() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const cellSize = canvas.width / gridSize;
+      ctx.strokeStyle = '#555';
+      ctx.font = '12px monospace';
+      ctx.textBaseline = 'top';
+      for (let x = 0; x < gridSize; x++) {
+        for (let y = 0; y < gridSize; y++) {
+          ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
         }
       }
+      for (const name in objects) {
+        const obj = objects[name];
+        ctx.fillStyle = obj.color || '#0f0';
+        ctx.fillRect(obj.x * cellSize, obj.y * cellSize, cellSize, cellSize);
+        ctx.fillStyle = '#000';
+        ctx.fillText(name, obj.x * cellSize + 2, obj.y * cellSize + 2);
+      }
     }
-  }
-}
 
-function run() {
-  output.textContent = '';
-  variables = {};
-  objects = {};
-  drawGrid();
-  const lines = document.getElementById('script').value.split('\n');
-  runScript(lines);
-}
+    function resolveVariables(line) {
+      return line.replace(/\{(\w+)\}/g, (_, name) => variables[name] ?? `{${name}}`);
+    }
 
-function toggleGuide() {
-  const modal = document.getElementById('guideModal');
-  modal.style.display = modal.style.display === 'none' ? 'block' : 'none';
-}
+    function wrapIndex(i, length) {
+      return ((i % length) + length) % length;
+    }
 
-drawGrid();
-</script>
+    function delay(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function getIndentedBlock(lines, startIndex) {
+      const block = [];
+      let i = startIndex + 1;
+      while (i < lines.length && lines[i].startsWith('  ')) {
+        block.push(lines[i].trim());
+        i++;
+      }
+      return block;
+    }
+
+    async function runScript(lines) {
+      for (let i = 0; i < lines.length; i++) {
+        let line = resolveVariables(lines[i].trim());
+
+        if (line.startsWith('set ')) {
+          const match = line.match(/set (\w+) to (.+)/);
+          if (match) variables[match[1]] = isNaN(match[2]) ? match[2] : parseInt(match[2]);
+        }
+
+        else if (line.startsWith('wait')) {
+          const match = line.match(/wait (.+?) (frames|milliseconds|seconds)/);
+          if (match) {
+            const value = parseInt(resolveVariables(match[1]));
+            const unit = match[2];
+            const ms = unit === 'seconds' ? value * 1000 : unit === 'milliseconds' ? value : value * 16;
+            await delay(ms);
+          }
+        }
+
+        else if (line.startsWith('loop')) {
+          const match = line.match(/loop (\d+) times:/);
+          if (match) {
+            const count = parseInt(match[1]);
+            const block = getIndentedBlock(lines, i);
+            for (let k = 0; k < count; k++) {
+              for (const cmd of block) await runScript([cmd]);
+            }
+            i += block.length;
+          }
+        }
+
+        else if (line.match(/for (\w+)([+-]\d+)? in "(.+)":/)) {
+          const [, varName, offsetRaw, str] = line.match(/for (\w+)([+-]\d+)? in "(.+)":/);
+          const offset = offsetRaw ? parseInt(offsetRaw) : 0;
+          const block = getIndentedBlock(lines, i);
+          for (let k = 0; k < str.length; k++) {
+            const index = wrapIndex(k + offset, str.length);
+            variables[varName] = str[index];
+            for (const cmd of block) await runScript([cmd]);
+          }
+          i += block.length;
+        }
+
+        else if (line.match(/for (\w+)=(\d+) in "(.+)":/)) {
+          const [, varName, startRaw, str] = line.match(/for (\w+)=(\d+) in "(.+)":/);
+          const startIndex = parseInt(startRaw);
+          const block = getIndentedBlock(lines, i);
+          for (let k = startIndex; k < str.length; k++) {
+            variables[varName] = str[k];
+            for (const cmd of block) await runScript([cmd]);
+          }
+          i += block.length;
+        }
+
+        else if (line.startsWith('log ')) {
+          log(line.slice(4));
+        }
+
+        else if (line.startsWith('set bounds to')) {
+          const match = line.match(/set bounds to (\d+)x(\d+)/);
+          if (match) {
+            gridSize = parseInt(match[1]);
+            canvas.width = gridSize * 20;
+            canvas.height = gridSize * 20;
+            drawGrid();
+          }
+        }
+
+        else if (line.startsWith('spawn')) {
+          const match = line.match(/spawn (\w+) at (\d+) (\d+)/);
+          if (match) {
+            const name = match[1];
+            const x = parseInt(match[2]);
+            const y = parseInt(match[3]);
+            objects[name] = { x, y };
+            drawGrid();
+          }
+        }
+
+        else if (line.startsWith('step')) {
+          const match = line.match(/step (\w+) to (\d+) (\d+)/);
+          if (match) {
+            const name = match[1];
+            const x = parseInt(match[2]);
+            const y = parseInt(match[3]);
+            if (objects[name]) {
+              objects[name].x = x;
+              objects[name].y = y;
+              drawGrid();
+            }
+          }
+        }
+      }
+    }
+
+        function run() {
+      output.textContent = '';
+      variables = {};
+      objects = {};
+      drawGrid();
+      const lines = document.getElementById('script').value.split('\n');
+      runScript(lines);
+    }
+
+    function toggleGuide() {
+      const modal = document.getElementById('guideModal');
+      modal.style.display = modal.style.display === 'none' ? 'block' : 'none';
+    }
+
+    drawGrid();
+  </script>
 </body>
 </html>
