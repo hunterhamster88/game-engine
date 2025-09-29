@@ -1,267 +1,214 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <title>MoleScript v1.4</title>
+  <title>MoleScript v1.5 Playground</title>
   <style>
-    body { font-family: sans-serif; display: flex; gap: 20px; padding: 20px; }
-    textarea { width: 300px; height: 400px; font-family: monospace; }
-    #canvas { width: 400px; height: 400px; background: #eee; position: relative; }
-    .object { position: absolute; width: 40px; height: 40px; text-align: center; line-height: 40px; color: white; font-weight: bold; }
-    #console { width: 300px; height: 400px; overflow-y: auto; background: #111; color: #0f0; padding: 10px; font-family: monospace; }
-    button { padding: 10px 20px; font-size: 16px; margin-bottom: 10px; }
+    body { font-family: monospace; background: #111; color: #eee; padding: 20px; display: flex; gap: 20px; }
+    textarea, pre, canvas { background: #222; color: #eee; border: none; padding: 10px; }
+    textarea { width: 100%; height: 150px; }
+    button { padding: 10px; background: #444; color: #fff; border: none; cursor: pointer; margin-top: 10px; }
+    #output { height: 100px; overflow-y: auto; margin-top: 10px; }
+    canvas { margin-top: 10px; border: 1px solid #555; }
+
+    #guideModal {
+      position: fixed; top: 50px; left: 50%; transform: translateX(-50%);
+      width: 600px; max-height: 80vh; overflow-y: auto;
+      background: #222; color: #eee; border: 2px solid #555;
+      padding: 20px; display: none; z-index: 1000;
+    }
+    #guideModal h2 { margin-top: 0; }
+    #closeGuide { float: right; background: #555; border: none; color: #fff; padding: 5px 10px; cursor: pointer; }
   </style>
 </head>
 <body>
-
   <div>
-    <button onclick="runScript()">Start</button>
-    <button onclick="openGuide()">Guide</button><br>
-    <textarea id="editor">// MoleScript v1.4
-spawn "player" as player at 0,0
-spawn "wall" as wall at 4,4
-spawn "hazard" as lava at 5,5
-
-# pathfinding setup #
-pathfind([player], [wall], [lava], 9,9)
-
-loop 10 times:
-  step player toward path</textarea>
+    <h2>MoleScript Editor</h2>
+    <textarea id="script">set bounds to 20x20
+set x to 5
+set y to 5
+spawn Molecmon at {x} {y}
+wait 500 milliseconds
+step Molecmon to 10 10
+loop 3 times:
+  log Molecmon moved to {x} {y}
+for i+1 in "molefun":
+  log {i}</textarea>
+    <br>
+    <button onclick="run()">Run</button>
+    <button onclick="toggleGuide()">Guide</button>
+    <pre id="output"></pre>
+    <canvas id="grid" width="400" height="400"></canvas>
   </div>
 
-  <div id="canvas"></div>
-  <div id="console"></div>
+  <div id="guideModal">
+    <button id="closeGuide" onclick="toggleGuide()">Close</button>
+    <h2>MoleScript v1.5 Guide</h2>
+    <pre>
+🔧 Core Commands
+- set var to value
+- set var to random between A and B
+- wait N frames / milliseconds / seconds
+- loop N times:
+- for var±N in "string":
+- log message
+- spawn name at x y
+- step name to x y
+- pathfind name to x y (coming soon)
+    </pre>
+  </div>
+<script>
+const output = document.getElementById('output');
+const canvas = document.getElementById('grid');
+const ctx = canvas.getContext('2d');
+let variables = {};
+let objects = {};
+let gridSize = 20;
 
-  <script>
-    const canvas = document.getElementById('canvas');
-    const consoleDiv = document.getElementById('console');
-    const editor = document.getElementById('editor');
-    const gridSize = 10;
-    const objects = {};
-    const costMap = Array.from({ length: gridSize }, () => Array(gridSize).fill(1));
-    const paths = {};
-
-    function log(msg) {
-      consoleDiv.innerHTML += msg + '<br>';
-      consoleDiv.scrollTop = consoleDiv.scrollHeight;
-    }
-
-    function render() {
-      canvas.innerHTML = '';
-      for (const name in objects) {
-        const obj = objects[name];
-        const el = document.createElement('div');
-        el.className = 'object';
-        el.style.left = obj.x * 40 + 'px';
-        el.style.top = obj.y * 40 + 'px';
-        el.style.background = obj.type === 'player' ? 'red' :
-                              obj.type === 'wall' ? 'black' :
-                              obj.type === 'hazard' ? 'orange' : 'blue';
-        el.textContent = name;
-        canvas.appendChild(el);
-      }
-    }
-
-    function runScript() {
-      consoleDiv.innerHTML = '';
-      const raw = editor.value.replace(/#.*?#/g, '');
-      const lines = raw.split('\n');
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (line.startsWith('spawn')) {
-          const match = line.match(/spawn\s+"(\w+)"\s+as\s+(\w+)(?:\s+at\s+(\d+),(\d+))?/);
-          if (match) {
-            const [_, type, name, x, y] = match;
-            const ox = parseInt(x || 0);
-            const oy = parseInt(y || 0);
-            objects[name] = { type, x: ox, y: oy };
-            if (type === 'wall') costMap[oy][ox] = Infinity;
-            if (type === 'hazard') {
-              costMap[oy][ox] = 20;
-              for (let dy = -1; dy <= 1; dy++) {
-                for (let dx = -1; dx <= 1; dx++) {
-                  const nx = ox + dx, ny = oy + dy;
-                  if (nx >= 0 && ny >= 0 && nx < gridSize && ny < gridSize && costMap[ny][nx] !== Infinity) {
-                    costMap[ny][nx] += 10;
-                  }
-                }
-              }
-            }
-            log(`Spawned ${type} as ${name} at ${ox},${oy}`);
-          }
-        } else if (line.startsWith('pathfind')) {
-          const match = line.match(/pathfind\(\s*
-
-\[([^\]
-
-]+)\]
-
-,\s*
-
-\[([^\]
-
-]*)\]
-
-,\s*
-
-\[([^\]
-
-]*)\]
-
-,\s*(\d+),\s*(\d+)\)/);
-          if (match) {
-            const agents = match[1].split(',').map(s => s.trim());
-            const walls = match[2].split(',').map(s => s.trim());
-            const hazards = match[3].split(',').map(s => s.trim());
-            const gx = parseInt(match[4]), gy = parseInt(match[5]);
-
-            for (const name of walls) {
-              const obj = objects[name];
-              if (obj) costMap[obj.y][obj.x] = Infinity;
-            }
-            for (const name of hazards) {
-              const obj = objects[name];
-              if (obj) {
-                costMap[obj.y][obj.x] = 20;
-                for (let dy = -1; dy <= 1; dy++) {
-                  for (let dx = -1; dx <= 1; dx++) {
-                    const nx = obj.x + dx, ny = obj.y + dy;
-                    if (nx >= 0 && ny >= 0 && nx < gridSize && ny < gridSize && costMap[ny][nx] !== Infinity) {
-                      costMap[ny][nx] += 10;
-                    }
-                  }
-                }
-              }
-            }
-
-            for (const name of agents) {
-              const obj = objects[name];
-              if (obj) {
-                paths[name] = findPath(obj.x, obj.y, gx, gy);
-                log(`Path computed for ${name}`);
-              }
-            }
-          }
-        } else if (line.startsWith('loop')) {
-          const match = line.match(/loop\s+(\d+)\s+times:/);
-          if (match) {
-            const count = parseInt(match[1]);
-            const block = [];
-            let j = i + 1;
-            while (j < lines.length && lines[j].startsWith('  ')) {
-              block.push(lines[j].trim());
-              j++;
-            }
-            for (let k = 0; k < count; k++) {
-              block.forEach(cmd => execute(cmd));
-            }
-            i = j - 1;
-          }
-        } else {
-          execute(line);
-        }
-      }
-      render();
-    }
-
-    function execute(line) {
-      if (line.startsWith('step')) {
-        const match = line.match(/step\s+(\w+)\s+toward\s+path/);
-        if (match) {
-          const name = match[1];
-          const obj = objects[name];
-          const path = paths[name];
-          if (obj && path && path.length > 0) {
-            const next = path.shift();
-            obj.x = next.x;
-            obj.y = next.y;
-            log(`Moved ${name} to ${next.x},${next.y}`);
-            render();
-          }
-        }
-      }
-    }
-
-    function findPath(sx, sy, gx, gy) {
-      const visited = Array.from({ length: gridSize }, () => Array(gridSize).fill(false));
-      const cost = Array.from({ length: gridSize }, () => Array(gridSize).fill(Infinity));
-      const prev = Array.from({ length: gridSize }, () => Array(gridSize).fill(null));
-      cost[sy][sx] = 0;
-      const queue = [{ x: sx, y: sy }];
-      while (queue.length) {
-        queue.sort((a, b) => cost[a.y][a.x] - cost[b.y][b.x]);
-        const { x, y } = queue.shift();
-        if (visited[y][x]) continue;
-        visited[y][x] = true;
-        const dirs = [[0,1],[1,0],[0,-1],[-1,0]];
-        for (const [dx, dy] of dirs) {
-          const nx = x + dx, ny = y + dy;
-          if (nx >= 0 && ny >= 0 && nx < gridSize && ny < gridSize && !visited[ny][nx]) {
-            const newCost = cost[y][x] + costMap[ny][nx];
-            if (newCost < cost[ny][nx]) {
-              cost[ny][nx] = newCost;
-              prev[ny][nx] = { x, y };
-              queue.push({ x: nx, y: ny });
-            }
-          }
-        }
-      }
-
-      let path = [];
-      let cx = gx, cy = gy;
-      while (prev[cy][cx]) {
-        path.unshift({ x: cx, y: cy });
-        const p = prev[cy][cx];
-        cx = p.x;
-        cy = p.y;
-      }
-            return path;
-    }
-
-    function openGuide() {
-  const guideWindow = window.open("", "MoleScriptGuide", "width=800,height=600");
-  const htmlContent = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>MoleScript v1.4 Guide</title>
-      <style>
-        body { font-family: sans-serif; max-width: 700px; margin: auto; padding: 20px; line-height: 1.6; }
-        h1, h2, h3 { color: #c33; }
-        code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
-        pre { background: #f4f4f4; padding: 10px; border-radius: 6px; overflow-x: auto; }
-      </style>
-    </head>
-    <body>
-      <h1>🧭 MoleScript v1.4 Guide</h1>
-      <h2>🚀 Core Commands</h2>
-      <ul>
-        <li><code>spawn "type" as name at x,y</code> — create an object</li>
-        <li><code>pathfind([agents], [walls], [hazards], goalX, goalY)</code> — compute paths</li>
-        <li><code>step name toward path</code> — move one tile along path</li>
-        <li><code>loop N times:</code> — repeat a block</li>
-        <li><code># comment #</code> — inline comment</li>
-      </ul>
-      <h2>🧪 Sample Script</h2>
-      <pre><code>spawn "player" as player at 0,0
-spawn "wall" as wall at 4,4
-spawn "hazard" as lava at 5,5
-
-# pathfinding setup #
-pathfind([player], [wall], [lava], 9,9)
-
-loop 10 times:
-  step player toward path</code></pre>
-    </body>
-    </html>
-  `;
-  guideWindow.document.open();
-  guideWindow.document.write(htmlContent);
-  guideWindow.document.close();
+function log(msg) {
+  output.textContent += msg + '\n';
 }
 
+function drawGrid() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const cellSize = canvas.width / gridSize;
+  ctx.strokeStyle = '#555';
+  ctx.font = '12px monospace';
+  ctx.textBaseline = 'top';
+  for (let x = 0; x < gridSize; x++) {
+    for (let y = 0; y < gridSize; y++) {
+      ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
+    }
+  }
+  for (const name in objects) {
+    const obj = objects[name];
+    ctx.fillStyle = obj.color || '#0f0';
+    ctx.fillRect(obj.x * cellSize, obj.y * cellSize, cellSize, cellSize);
+    ctx.fillStyle = '#000';
+    ctx.fillText(name, obj.x * cellSize + 2, obj.y * cellSize + 2);
+  }
+}
 
-  </script>
+function resolveVariables(line) {
+  return line.replace(/\{(\w+)\}/g, (_, name) => variables[name] ?? `{${name}}`);
+}
 
+function wrapIndex(i, length) {
+  return ((i % length) + length) % length;
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getIndentedBlock(lines, startIndex) {
+  const block = [];
+  let i = startIndex + 1;
+  while (i < lines.length && lines[i].startsWith('  ')) {
+    block.push(lines[i].trim());
+    i++;
+  }
+  return block;
+}
+
+async function runScript(lines) {
+  for (let i = 0; i < lines.length; i++) {
+    let line = resolveVariables(lines[i].trim());
+
+    if (line.startsWith('set ')) {
+      const match = line.match(/set (\w+) to (.+)/);
+      if (match) variables[match[1]] = isNaN(match[2]) ? match[2] : parseInt(match[2]);
+    }
+
+    else if (line.startsWith('wait')) {
+      const match = line.match(/wait (.+?) (frames|milliseconds|seconds)/);
+      if (match) {
+        const value = parseInt(resolveVariables(match[1]));
+        const unit = match[2];
+        const ms = unit === 'seconds' ? value * 1000 : unit === 'milliseconds' ? value : value * 16;
+        await delay(ms);
+      }
+    }
+
+    else if (line.startsWith('loop')) {
+      const match = line.match(/loop (\d+) times:/);
+      if (match) {
+        const count = parseInt(match[1]);
+        const block = getIndentedBlock(lines, i);
+        for (let k = 0; k < count; k++) {
+          for (const cmd of block) await runScript([cmd]);
+        }
+        i += block.length;
+      }
+    }
+
+    else if (line.match(/for (\w+)([+-]\d+)? in "(.+)":/)) {
+      const [, varName, offsetRaw, str] = line.match(/for (\w+)([+-]\d+)? in "(.+)":/);
+      const offset = offsetRaw ? parseInt(offsetRaw) : 0;
+      const block = getIndentedBlock(lines, i);
+      for (let k = 0; k < str.length; k++) {
+        const index = wrapIndex(k + offset, str.length);
+        variables[varName] = str[index];
+        for (const cmd of block) await runScript([cmd]);
+      }
+      i += block.length;
+    }
+
+    else if (line.startsWith('log ')) {
+      log(line.slice(4));
+    }
+
+    else if (line.startsWith('set bounds to')) {
+      const match = line.match(/set bounds to (\d+)x(\d+)/);
+      if (match) {
+        gridSize = parseInt(match[1]);
+        canvas.width = gridSize * 20;
+        canvas.height = gridSize * 20;
+        drawGrid();
+      }
+    }
+
+    else if (line.startsWith('spawn')) {
+      const match = line.match(/spawn (\w+) at (\d+) (\d+)/);
+      if (match) {
+        const name = match[1];
+        const x = parseInt(match[2]);
+        const y = parseInt(match[3]);
+        objects[name] = { x, y };
+        drawGrid();
+      }
+    }
+
+    else if (line.startsWith('step')) {
+      const match = line.match(/step (\w+) to (\d+) (\d+)/);
+      if (match) {
+        const name = match[1];
+        const x = parseInt(match[2]);
+        const y = parseInt(match[3]);
+        if (objects[name]) {
+          objects[name].x = x;
+          objects[name].y = y;
+          drawGrid();
+        }
+      }
+    }
+  }
+}
+
+function run() {
+  output.textContent = '';
+  variables = {};
+  objects = {};
+  drawGrid();
+  const lines = document.getElementById('script').value.split('\n');
+  runScript(lines);
+}
+
+function toggleGuide() {
+  const modal = document.getElementById('guideModal');
+  modal.style.display = modal.style.display === 'none' ? 'block' : 'none';
+}
+
+drawGrid();
+</script>
 </body>
 </html>
